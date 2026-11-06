@@ -1,0 +1,3 @@
+[submodule "third_party/dds"]
+	path = third_party/dds
+	url = https://github.com/dds-bridge/dds.git

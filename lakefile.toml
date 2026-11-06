@@ -1,0 +1,19 @@
+name = "ddscheck"
+version = "0.1.0"
+defaultTargets = ["ddscheck"]
+
+[[lean_lib]]
+name = "DdsCheck"
+precompileModules = true
+
+[[lean_exe]]
+name = "ddscheck"
+root = "Main"
+
+[[lean_exe]]
+name = "specvsdds"
+root = "tests.SpecVsDds"
+
+[[lean_exe]]
+name = "parvsdds"
+root = "tests.ParVsDds"
