@@ -37,6 +37,15 @@ its certificate, that is a proof that DDS was wrong on that result.
 
 You need Lean ([elan](https://github.com/leanprover/elan)) and `clang++`.
 
+Clone with submodules, because DDS is one. Without them `third_party/dds` is empty, and the build fails:
+
+```sh
+git clone --recurse-submodules https://github.com/randalburns/ddscheck.git
+cd ddscheck
+```
+
+If you've already cloned without them, run `git submodule update --init`.
+
 ```sh
 scripts/build.sh
 
@@ -141,5 +150,9 @@ lake build specvsdds && .lake/build/bin/specvsdds build/endgames.txt
 
 ## DDS version
 
-`third_party/dds` is an unmodified clone of commit `ea66294` (Apache-2.0).
-[scripts/build_dds.sh](scripts/build_dds.sh) compiles it directly, so Bazel isn't needed.
+`third_party/dds` is a git submodule, pinned to commit `ea66294` and unmodified. DDS has its own Apache-2.0
+license. [scripts/build_dds.sh](scripts/build_dds.sh) compiles it directly, so Bazel isn't needed.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
