@@ -28,7 +28,7 @@ wins at least `k` tricks against any defence, and an East-West strategy that win
 | DDS | [third_party/dds](third_party/dds) | Supplies the claims and moves | No |
 | Second solver | [tools/altsolve.hpp](tools/altsolve.hpp) | An independent solver: checks DDS, and can supply claims and moves instead | No |
 
-`altsolve` shares no code with DDS and leaves out DDS's shortcuts, so it can't share their bugs. With
+`altsolve` shares no code with DDS and leaves out DDS's shortcuts. With
 `ddscert --solver own` (or `SOLVER=own scripts/prove_deal.sh ...`), certificates are built from its
 moves instead, and any disagreement with DDS's table is reported. If it disagrees and Lean accepts
 its certificate, that is a proof that DDS was wrong on that result.
