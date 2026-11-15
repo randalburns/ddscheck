@@ -24,14 +24,50 @@ wins at least `k` tricks against any defence, and an East-West strategy that win
 | Rank theorem | [DdsCheck/Canon.lean](DdsCheck/Canon.lean) | Only the relative order of ranks matters, so positions can share proofs | No, proved |
 | Checker | [DdsCheck/Checker.lean](DdsCheck/Checker.lean) | `checkClaim_sound`: if the checker accepts, the claim is true | No, proved |
 | Parser and CLI | [DdsCheck/Format.lean](DdsCheck/Format.lean), [Main.lean](Main.lean) | Read certificates | Not for theorems; see below for `ddscheck` |
-| Generator | [tools/ddscert.cpp](tools/ddscert.cpp) | Asks DDS for moves and writes certificates | No |
+| Generator | [tools/ddscert.cpp](tools/ddscert.cpp) | Asks a solver (DDS, altsolve or ddfast) for moves and writes certificates | No |
 | DDS | [third_party/dds](third_party/dds) | Supplies the claims and moves | No |
 | Second solver | [tools/altsolve.hpp](tools/altsolve.hpp) | An independent solver: checks DDS, and can supply claims and moves instead | No |
+| ddfast | [third_party/ddfast](third_party/ddfast) | A fast exact solver: checks DDS, and can supply claims and moves instead | No |
 
 `altsolve` shares no code with DDS and leaves out DDS's shortcuts. With
 `ddscert --solver own` (or `SOLVER=own scripts/prove_deal.sh ...`), certificates are built from its
 moves instead, and any disagreement with DDS's table is reported. If it disagrees and Lean accepts
 its certificate, that is a proof that DDS was wrong on that result.
+
+### ddfast as a move source
+
+[ddfast](https://github.com/randalburns/ddfast) is a separate exact solver for full deals, several
+times faster than DDS. With `ddscert --solver ddfast` (or `SOLVER=ddfast scripts/prove_deal.sh ...`)
+the claims come from ddfast's table and the moves from its search, and any disagreement with DDS's
+table is reported, as with `--solver own`.
+
+ddfast only values positions at the start of a trick (`ddfast::solve_position`). `ddscert` picks a
+card in the middle of a trick by searching the rest of that trick itself, trying every reply of
+the opponents and asking ddfast for the value of each position at the start of the next trick.
+Values are cached by position, with ranks reduced as in the rank theorem.
+
+None of this is trusted: ddfast, the search in `ddscert` and the cache only choose cards. A wrong
+value makes `ddscert` stop with an error or produces a certificate that `ddscheck` rejects; it
+can never make Lean accept a false claim. ddfast is plain C++ with no Lean in it.
+
+ddfast needs an x86-64 CPU with AVX-512 and BMI2, and Linux; `scripts/build.sh` builds `ddscert`
+without it elsewhere. It loads ddclaim's endgame tables (about 1.2 GB of memory per process) from
+`$DDCLAIM_DIR`, building them there first if they are missing (about 1.1 GB of files, a few
+minutes). Only ddfast's `extern/ddclaim` submodule is needed, not its copy of DDS.
+
+For the 20 certificates of the example deal under Usage, one core each (calls count the
+questions put to a solver; `ddscert` caches DDS's and ddfast's answers by position):
+
+| Move source | Solver calls per certificate | Time per certificate |
+|---|---|---|
+| DDS (`SolveBoard`, the value of every card) | 627,000 mean (355,000–1,230,000) | 124 s mean (67–222 s) |
+| altsolve (`ns_reaches`, one card at a time) | 856,000 mean (400,000–1,759,000) | 5.6 s mean (0.4–18 s; its table is kept from one contract to the next) |
+| ddfast (`solve_position`, start of a trick only) | 131,000 mean (55,000–316,000) | 1.1 s mean (0.6–2.5 s), plus about 3 s per process to load tables and solve the deal |
+
+The ddfast and altsolve certificates came out byte for byte the same: both solvers are exact, and
+`ddscert` takes the first card that works in the same order for both. On two random deals, ddfast
+needed 1.3 s per certificate on average. Checking a certificate in Lean (`lake env lean`) takes
+about 80 s and 0.7 GB, whatever the move source.
 
 ## Usage
 
@@ -44,7 +80,9 @@ git clone --recurse-submodules https://github.com/randalburns/ddscheck.git
 cd ddscheck
 ```
 
-If you've already cloned without them, run `git submodule update --init`.
+If you've already cloned without them, run `git submodule update --init`. For ddfast, also run
+`git -C third_party/ddfast submodule update --init extern/ddclaim`. (`--recurse-submodules` also
+fetches ddfast's own copy of DDS, which nothing here uses.)
 
 ```sh
 scripts/build.sh
@@ -110,7 +148,8 @@ failing contract scores doubled and a making one undoubled. This follows DDS's o
 - **Only trick counts from the opening lead and par scores are proved.** `AnalysePlay`,
   mid-play positions and DDS's lists of par contracts are not covered.
 - **A wrong answer never yields a false proof.** With DDS supplying the moves, a wrong answer shows
-  up as a generator error or a rejected certificate. To find the correct value, use `--solver own`.
+  up as a generator error or a rejected certificate. To find the correct value, use `--solver own`
+  or `--solver ddfast`.
 - **Certificates are large:** 3–29 MB per contract in testing, depending on the deal.
 
 ## Tests
@@ -152,6 +191,13 @@ lake build specvsdds && .lake/build/bin/specvsdds build/endgames.txt
 
 `third_party/dds` is a git submodule, pinned to commit `ea66294` and unmodified. DDS has its own Apache-2.0
 license. [scripts/build_dds.sh](scripts/build_dds.sh) compiles it directly, so Bazel isn't needed.
+
+## ddfast version
+
+`third_party/ddfast` is a git submodule, pinned to commit `09da416` (the first with
+`solve_position`). Initialise only its `extern/ddclaim` submodule:
+`git -C third_party/ddfast submodule update --init extern/ddclaim`. ddfast and ddclaim have their
+own Apache-2.0 licenses.
 
 ## License
 

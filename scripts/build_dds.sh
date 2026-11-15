@@ -12,10 +12,10 @@ cd "$DDS"
 compile_one() {
   obj="$OUT/obj/$(echo "$1" | tr '/' '_').o"
   [ "$obj" -nt "$1" ] && return 0
-  clang++ -std=c++20 -O3 -DNDEBUG -Ilibrary/src -c "$1" -o "$obj"
+  ${CXX:-clang++} -std=c++20 -O3 -DNDEBUG -Ilibrary/src -c "$1" -o "$obj"
 }
 
-jobs=$(sysctl -n hw.ncpu)
+jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
 running=0
 for src in $(find library/src -name '*.cpp'); do
   compile_one "$src" &

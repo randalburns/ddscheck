@@ -6,10 +6,13 @@
 // either this search would hit a contradiction or ddscheck would reject the output.
 //
 // With --solver own, the results and moves come from altsolve instead, so DDS plays no part in
-// the certificate. DDS's table is still computed, and any disagreement is reported.
+// the certificate. With --solver ddfast they come from ddfast (third_party/ddfast), which only
+// values positions at the start of a trick: a card in the middle of a trick is chosen by
+// searching the rest of the trick here and asking ddfast for the positions after it. Either
+// way DDS's table is still computed, and any disagreement is reported.
 //
 // Usage: ddscert --pbn "N:AKQ.... ..." [--strain S|H|D|C|N --declarer N|E|S|W]
-//                [--solver dds|own] -o out.cert
+//                [--solver dds|own|ddfast] -o out.cert
 #include <api/dll.h>
 
 #include <algorithm>
@@ -26,6 +29,9 @@
 #include <vector>
 
 #include "altsolve.hpp"
+#ifdef WITH_DDFAST
+#include "ddfast.hpp"
+#endif
 
 namespace {
 
@@ -45,6 +51,9 @@ Bytes g_entries;
 size_t g_facts;
 size_t g_oracle_calls;
 altsolve::Solver* g_own;  // null when DDS supplies the moves
+bool g_ddfast;            // ddfast supplies the moves
+bool g_ddfast_keep;       // ddfast may keep its search table (same strain as its last call)
+std::unordered_map<std::string, int> g_value_cache;  // ddfast's values, by canonical position
 std::unordered_map<std::string, std::pair<int, size_t>> g_proven;
 std::unordered_map<std::string, FutureTricks> g_oracle_cache;
 
@@ -132,6 +141,91 @@ bool beats(const Play& a, const Play& best) {
 
 size_t prove(const Layout& position, int leader, int side, int need);
 
+// North-South's tricks from a position at the start of a trick, from ddfast (untrusted).
+int ddfast_ns(const Layout& position, int leader) {
+  Layout p = canonical(position);
+  std::string k = key_of(p, leader);
+  auto it = g_value_cache.find(k);
+  if (it != g_value_cache.end()) return it->second;
+  int v = -1;
+#ifdef WITH_DDFAST
+  ddfast::Position q{};
+  for (int seat = 0; seat < 4; seat++)
+    for (int suit = 0; suit < 4; suit++) q.hand[seat][suit] = p.holding[seat][suit] >> 2;
+  q.trump = g_trump;
+  q.leader = leader;
+  v = ddfast::solve_position(q, g_ddfast_keep);
+  g_ddfast_keep = true;
+#endif
+  g_oracle_calls++;
+  if (v < 0) {
+    fprintf(stderr, "ddfast error: bad position\n");
+    exit(2);
+  }
+  g_value_cache.emplace(std::move(k), v);
+  return v;
+}
+
+int cards_left(const Layout& p, int seat) {
+  int n = 0;
+  for (int suit = 0; suit < 4; suit++) n += __builtin_popcount(p.holding[seat][suit]);
+  return n;
+}
+
+// The legal cards of `seat`, one per run of equivalent cards: cards of one suit in one hand
+// with no remaining card of another hand, nor a card of this trick, between them.
+std::vector<std::pair<int, int>> distinct_cards(const Layout& p, int seat, const std::vector<Play>& trick) {
+  std::vector<std::pair<int, int>> out;
+  int led = trick.empty() ? -1 : trick[0].suit;
+  bool follows = led >= 0 && p.holding[seat][led] != 0;
+  for (int suit = 0; suit < 4; suit++) {
+    if (follows && suit != led) continue;
+    uint16_t others = 0;
+    for (int s = 0; s < 4; s++)
+      if (s != seat) others |= p.holding[s][suit];
+    for (const Play& t : trick)
+      if (t.suit == suit) others |= 1 << t.rank;
+    bool run = false;
+    for (int r = 14; r >= 2; r--) {
+      if (p.holding[seat][suit] >> r & 1) {
+        if (!run) out.push_back({suit, r});
+        run = true;
+      } else if (others >> r & 1) {
+        run = false;
+      }
+    }
+  }
+  return out;
+}
+
+// Whether `side` can take `need` tricks from here, `trick` being the cards played so far to
+// this trick: a search of the rest of the trick, with ddfast's values once it is over.
+bool fast_reaches(Layout& p, int leader, int side, int need, std::vector<Play>& trick) {
+  if (need <= 0) return true;
+  if (trick.size() == 4) {
+    Play best = trick[0];
+    for (int i = 1; i < 4; i++)
+      if (beats(trick[i], best)) best = trick[i];
+    int next_need = need - ((best.seat & 1) == side ? 1 : 0);
+    if (next_need <= 0) return true;
+    int left = cards_left(p, 0);
+    if (next_need > left) return false;
+    int ns = ddfast_ns(p, best.seat);
+    return (side == 0 ? ns : left - ns) >= next_need;
+  }
+  int seat = (leader + static_cast<int>(trick.size())) % 4;
+  bool ours = (seat & 1) == side;
+  for (auto [suit, rank] : distinct_cards(p, seat, trick)) {
+    p.holding[seat][suit] &= ~(1 << rank);
+    trick.push_back({seat, suit, rank});
+    bool works = fast_reaches(p, leader, side, need, trick);
+    trick.pop_back();
+    p.holding[seat][suit] |= 1 << rank;
+    if (works == ours) return ours;
+  }
+  return !ours;
+}
+
 // How many replies the opponents have in the rest of this trick if the proving side plays a
 // card of `suit` now. Choosing a card that keeps this small keeps the certificate small.
 size_t opponent_replies(const Layout& p, int leader, int side, const std::vector<Play>& trick,
@@ -179,7 +273,7 @@ void walk(Layout& p, int leader, int side, int need, std::vector<Play>& trick, B
     p.holding[seat][suit] |= 1 << rank;
   };
 
-  if ((seat & 1) == side && g_own != nullptr) {
+  if ((seat & 1) == side && (g_own != nullptr || g_ddfast)) {
     // Try the cards leaving the opponents the fewest replies first.
     std::vector<std::tuple<size_t, int, int>> candidates;
     for (int suit = 0; suit < 4; suit++) {
@@ -193,6 +287,20 @@ void walk(Layout& p, int leader, int side, int need, std::vector<Play>& trick, B
     for (int suit = 0; suit < 4; suit++) left += __builtin_popcount(p.holding[seat][suit]);
     for (auto [replies, suit, negative_rank] : candidates) {
       int rank = -negative_rank;
+      if (g_ddfast) {
+        p.holding[seat][suit] &= ~(1 << rank);
+        trick.push_back({seat, suit, rank});
+        bool works = fast_reaches(p, leader, side, need, trick);
+        trick.pop_back();
+        p.holding[seat][suit] |= 1 << rank;
+        if (works) {
+          out.push_back(1);
+          out.push_back(card_byte(suit, rank));
+          play_and_walk(suit, rank);
+          return;
+        }
+        continue;
+      }
       altsolve::Holding after = p.holding;
       after[seat][suit] &= static_cast<uint16_t>(~(1 << rank));
       std::vector<altsolve::Play> plays;
@@ -209,7 +317,7 @@ void walk(Layout& p, int leader, int side, int need, std::vector<Play>& trick, B
         return;
       }
     }
-    fprintf(stderr, "altsolve contradicts itself: no card takes the %d tricks it promised\n", need);
+    fprintf(stderr, "%s contradicts itself: no card takes the %d tricks it promised\n", g_ddfast ? "ddfast" : "altsolve", need);
     exit(3);
   }
 
@@ -308,6 +416,8 @@ void add_claim(Bytes& file, const Layout& deal, int strain, int declarer, int de
   g_facts = 0;
   g_proven.clear();
   g_oracle_cache.clear();
+  g_value_cache.clear();
+  g_ddfast_keep = false;
   g_oracle_calls = 0;
   if (g_own != nullptr) g_own->set_trump(strain);
 
@@ -360,7 +470,7 @@ int main(int argc, char** argv) {
     }
   }
   if (pbn.empty() || out_path.empty()) {
-    fprintf(stderr, "usage: ddscert --pbn \"N:...\" [--strain S|H|D|C|N --declarer N|E|S|W] [--solver dds|own] -o out.cert\n");
+    fprintf(stderr, "usage: ddscert --pbn \"N:...\" [--strain S|H|D|C|N --declarer N|E|S|W] [--solver dds|own|ddfast] -o out.cert\n");
     return 2;
   }
 
@@ -386,10 +496,28 @@ int main(int argc, char** argv) {
   if (solver_name == "own") {
     own = std::make_unique<altsolve::Solver>(own_options);
     g_own = own.get();
+  } else if (solver_name == "ddfast") {
+#ifdef WITH_DDFAST
+    ddfast::init(nullptr);  // the tables in $DDCLAIM_DIR
+    g_ddfast = true;
+#else
+    fprintf(stderr, "this ddscert was built without ddfast\n");
+    return 2;
+#endif
   } else if (solver_name != "dds") {
     fprintf(stderr, "unknown solver %s\n", solver_name.c_str());
     return 2;
   }
+
+#ifdef WITH_DDFAST
+  ddfast::Table fast_table{};
+  if (g_ddfast) {
+    ddfast::Deal fast_deal{};
+    for (int seat = 0; seat < 4; seat++)
+      for (int suit = 0; suit < 4; suit++) fast_deal.hand[seat][suit] = deal.holding[seat][suit] >> 2;
+    ddfast::solve_table(fast_deal, fast_table);
+  }
+#endif
 
   Bytes file;
   for (int strain = 0; strain < 5; strain++)
@@ -405,6 +533,14 @@ int main(int argc, char** argv) {
           printf("DISAGREE strain %d declarer %d: DDS %d, altsolve %d\n", strain, declarer, tricks, own_tricks);
         tricks = own_tricks;
       }
+#ifdef WITH_DDFAST
+      if (g_ddfast) {
+        int fast_tricks = fast_table.tricks[strain][declarer];
+        if (fast_tricks != tricks)
+          printf("DISAGREE strain %d declarer %d: DDS %d, ddfast %d\n", strain, declarer, tricks, fast_tricks);
+        tricks = fast_tricks;
+      }
+#endif
       add_claim(file, deal, strain, declarer, tricks);
     }
   std::ofstream(out_path, std::ios::binary)
