@@ -1,3 +1,6 @@
 [submodule "third_party/dds"]
 	path = third_party/dds
 	url = https://github.com/dds-bridge/dds.git
+[submodule "third_party/ddfast"]
+	path = third_party/ddfast
+	url = /home/randal/active/ddfast

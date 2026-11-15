@@ -3,15 +3,16 @@
 #
 # Usage: scripts/prove_deal.sh "N:QJ6.K652.J85.T98 873.J97.AT764.Q4 K5.T83.KQ9.A7652 AT942.AQ4.32.KJ3" outdir
 #
-# Set SOLVER=own to get the moves from altsolve instead of DDS. JOBS sets the parallelism; altsolve
-# uses about 700 MB per job.
+# Set SOLVER=own to get the moves from altsolve instead of DDS, or SOLVER=ddfast to get them from
+# ddfast (with its tables in $DDCLAIM_DIR). JOBS sets the parallelism; altsolve uses about 700 MB
+# per job and ddfast about 1.3 GB (its endgame tables), so for ddfast JOBS defaults to 2.
 set -eu
 
 [ $# -eq 2 ] || { echo "usage: $0 \"<PBN deal>\" <output directory>" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PBN=$1
 OUT=$2
-JOBS=${JOBS:-8}
+if [ "${SOLVER:-dds}" = ddfast ]; then JOBS=${JOBS:-2}; else JOBS=${JOBS:-8}; fi
 mkdir -p "$OUT"
 
 for strain in N S H D C; do
