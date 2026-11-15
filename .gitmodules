@@ -4,4 +4,4 @@
 [submodule "third_party/ddfast"]
 	path = third_party/ddfast
 	url = https://github.com/randalburns/ddfast.git
-	branch = solve-position
+	branch = main
