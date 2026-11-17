@@ -53,7 +53,7 @@ can never make Lean accept a false claim. ddfast is plain C++ with no Lean in it
 ddfast needs an x86-64 CPU with AVX-512 and BMI2, and Linux; `scripts/build.sh` builds `ddscert`
 without it elsewhere. It loads ddclaim's endgame tables (about 1.2 GB of memory per process) from
 `$DDCLAIM_DIR`, building them there first if they are missing (about 1.1 GB of files, a few
-minutes). Only ddfast's `extern/ddclaim` submodule is needed, not its copy of DDS.
+minutes). ddclaim's tables are part of ddfast (`extern/ddclaim`); ddfast's copy of DDS is not needed.
 
 For the 20 certificates of the example deal under Usage, one core each (calls count the
 questions put to a solver; `ddscert` caches DDS's and ddfast's answers by position):
@@ -80,9 +80,8 @@ git clone --recurse-submodules https://github.com/randalburns/ddscheck.git
 cd ddscheck
 ```
 
-If you've already cloned without them, run `git submodule update --init`. For ddfast, also run
-`git -C third_party/ddfast submodule update --init extern/ddclaim`. (`--recurse-submodules` also
-fetches ddfast's own copy of DDS, which nothing here uses.)
+If you've already cloned without them, run `git submodule update --init`. (`--recurse-submodules`
+also fetches ddfast's own copy of DDS, which nothing here uses.)
 
 ```sh
 scripts/build.sh
@@ -194,10 +193,9 @@ license. [scripts/build_dds.sh](scripts/build_dds.sh) compiles it directly, so B
 
 ## ddfast version
 
-`third_party/ddfast` is a git submodule, pinned to commit `09da416` (the first with
-`solve_position`). Initialise only its `extern/ddclaim` submodule:
-`git -C third_party/ddfast submodule update --init extern/ddclaim`. ddfast and ddclaim have their
-own Apache-2.0 licenses.
+`third_party/ddfast` is a git submodule that follows ddfast's `main` branch. ddclaim's endgame
+tables are inside it (`extern/ddclaim`, no longer a submodule of their own), so nothing below it
+needs initialising. ddfast and ddclaim have their own Apache-2.0 licenses.
 
 ## License
 

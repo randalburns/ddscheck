@@ -16,8 +16,9 @@ fi
 export CXX
 scripts/build_dds.sh
 
-# ddfast (third_party/ddfast) needs x86-64 with AVX-512 and BMI2, Linux, and its ddclaim
-# submodule (its own DDS submodule is not needed). Without them ddscert is built without it.
+# ddfast (third_party/ddfast, which contains ddclaim's tables in extern/ddclaim) needs x86-64
+# with AVX-512 and BMI2, and Linux; its DDS submodule is not needed. Without them ddscert is
+# built without it.
 DDFAST=third_party/ddfast
 FAST_FLAGS=""
 FAST_LIBS=""
@@ -30,15 +31,16 @@ if [ -f "$DDFAST/src/solver.cpp" ] && [ -f "$DDFAST/extern/ddclaim/src/ddclaim.c
     $CXX $FAST -c "$DDFAST/extern/ddclaim/src/ddclaim.cpp" -o build/ddfast/ddclaim.o &
     $CXX $FAST -c "$DDFAST/src/solver.cpp" -o build/ddfast/solver.o &
     $CXX $FAST -c "$DDFAST/src/api.cpp" -o build/ddfast/api.o &
+    $CXX $FAST -c "$DDFAST/src/par_deal.cpp" -o build/ddfast/par_deal.o &
     wait
   }
   rm -f build/ddfast/libddfast.a
-  ar rcs build/ddfast/libddfast.a build/ddfast/solver.o build/ddfast/api.o build/ddfast/ddclaim.o
+  ar rcs build/ddfast/libddfast.a build/ddfast/solver.o build/ddfast/api.o build/ddfast/par_deal.o build/ddfast/ddclaim.o
   FAST_FLAGS="-DWITH_DDFAST -I$DDFAST/include"
   FAST_LIBS="build/ddfast/libddfast.a -pthread"
   echo "built build/ddfast/libddfast.a"
 else
-  echo "ddfast not built (needs third_party/ddfast with extern/ddclaim, and AVX-512 and BMI2)"
+  echo "ddfast not built (needs third_party/ddfast, and AVX-512 and BMI2)"
 fi
 
 # shellcheck disable=SC2086
