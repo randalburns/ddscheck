@@ -498,7 +498,7 @@ int main(int argc, char** argv) {
     g_own = own.get();
   } else if (solver_name == "ddfast") {
 #ifdef WITH_DDFAST
-    ddfast::init(nullptr);  // the tables in $DDCLAIM_DIR
+    ddfast::init(nullptr);  // the tables in $DDFAST_TABLES, built there on first use
     g_ddfast = true;
 #else
     fprintf(stderr, "this ddscert was built without ddfast\n");

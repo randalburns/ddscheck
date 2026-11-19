@@ -4,7 +4,7 @@
 # Usage: scripts/prove_deal.sh "N:QJ6.K652.J85.T98 873.J97.AT764.Q4 K5.T83.KQ9.A7652 AT942.AQ4.32.KJ3" outdir
 #
 # Set SOLVER=own to get the moves from altsolve instead of DDS, or SOLVER=ddfast to get them from
-# ddfast (with its tables in $DDCLAIM_DIR). JOBS sets the parallelism; altsolve uses about 700 MB
+# ddfast (with its tables in $DDFAST_TABLES). JOBS sets the parallelism; altsolve uses about 700 MB
 # per job and ddfast about 1.3 GB (its endgame tables), so for ddfast JOBS defaults to 2.
 set -eu
 

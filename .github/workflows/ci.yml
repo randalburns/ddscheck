@@ -1,0 +1,73 @@
+# Tests on every push (scripts/ci.sh), as two jobs side by side:
+#   dds     DDS against independent solvers, the Lean rules and par evaluator against DDS, the
+#           kernel-checked examples, a certificate with DDS's moves
+#   ddfast  all 20 results of a deal certified with ddfast's moves and checked (ddfast's table
+#           must agree with DDS's), one with altsolve's, tamper tests
+#   ci-ok   the one check to require in branch protection: passes when both passed
+# ddfast builds with its AVX-512 code on a runner that has it, else with Google Highway (pinned
+# release HWY_VERSION, headers only, where ddfast's build script looks for it). Its endgame
+# tables are built on first use with a short fill (a sparser 4-card table only means more
+# search, not different answers) and cached.
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  HWY_VERSION: "1.4.0"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [dds, ddfast]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DDFAST_TABLES: ${{ github.workspace }}/third_party/ddfast/build/tables
+      DDFAST_TABLE_SECONDS: "20"
+      DDFAST_TABLE_MB: "1500"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: google/highway
+          ref: ${{ env.HWY_VERSION }}
+          path: third_party/ddfast/build/highway
+      - name: CPU
+        run: grep -m1 'model name' /proc/cpuinfo
+      - uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
+      - name: Lean
+        run: |
+          [ -x ~/.elan/bin/lake ] || curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        if: matrix.mode == 'ddfast'
+        with:
+          path: third_party/ddfast/build/tables
+          key: ddfast-tables-${{ runner.os }}-${{ hashFiles('third_party/ddfast/src/tables.cpp', 'third_party/ddfast/src/tables.hpp', 'third_party/ddfast/src/position.hpp') }}
+      - name: Build and test
+        run: |
+          mkdir -p "$DDFAST_TABLES"
+          sh scripts/ci.sh ${{ matrix.mode }}
+
+  ci-ok:
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Both jobs passed
+        run: |
+          echo '${{ toJSON(needs) }}'
+          [ '${{ needs.test.result }}' = success ]
