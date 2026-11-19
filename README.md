@@ -50,10 +50,13 @@ None of this is trusted: ddfast, the search in `ddscert` and the cache only choo
 value makes `ddscert` stop with an error or produces a certificate that `ddscheck` rejects; it
 can never make Lean accept a false claim. ddfast is plain C++ with no Lean in it.
 
-ddfast needs an x86-64 CPU with AVX-512 and BMI2, and Linux; `scripts/build.sh` builds `ddscert`
-without it elsewhere. It loads ddclaim's endgame tables (about 1.2 GB of memory per process) from
-`$DDCLAIM_DIR`, building them there first if they are missing (about 1.1 GB of files, a few
-minutes). Only ddfast's `extern/ddclaim` submodule is needed, not its copy of DDS.
+`scripts/build.sh` builds ddfast with ddfast's own build script: its AVX-512 code where the CPU
+has it, Google Highway's elsewhere (x86-64 without AVX-512, which needs Highway's headers, and
+Apple silicon); if ddfast does not build, `ddscert` is built without it. ddfast loads its
+endgame tables (about 1.2 GB of memory per process) from `$DDFAST_TABLES` (default
+`third_party/ddfast/build/tables`), building them there first if they are missing (about
+1.1 GB of files, a few minutes; `DDFAST_TABLE_SECONDS` shortens the fill for a sparser table
+that means more search, not different answers).
 
 For the 20 certificates of the example deal under Usage, one core each (calls count the
 questions put to a solver; `ddscert` caches DDS's and ddfast's answers by position):
@@ -154,6 +157,16 @@ failing contract scores doubled and a making one undoubled. This follows DDS's o
 
 ## Tests
 
+Every push runs two test sets on GitHub Actions ([scripts/ci.sh](scripts/ci.sh), a few minutes
+each; `sh scripts/ci.sh dds` or `sh scripts/ci.sh ddfast` runs one locally):
+- **dds:** DDS against brute force and altsolve, the Lean rules and par evaluator against DDS,
+  the kernel-checked examples below, and one certificate with DDS's moves, checked.
+- **ddfast:** all 20 results of the example deal certified with ddfast's moves and checked
+  (ddfast's table must agree with DDS's), one certificate with altsolve's moves, and tamper
+  tests.
+
+The individual tests, with larger settings:
+
 ```sh
 # Tamper tests: false claims and corrupted certificates must not be proved
 python3 tests/tamper.py spades.cert 40
@@ -194,10 +207,9 @@ license. [scripts/build_dds.sh](scripts/build_dds.sh) compiles it directly, so B
 
 ## ddfast version
 
-`third_party/ddfast` is a git submodule, pinned to commit `09da416` (the first with
-`solve_position`). Initialise only its `extern/ddclaim` submodule:
-`git -C third_party/ddfast submodule update --init extern/ddclaim`. ddfast and ddclaim have their
-own Apache-2.0 licenses.
+`third_party/ddfast` is a git submodule, pinned to a commit of ddfast's `main` (`c3f3e72`).
+ddfast's build script needs its `extern/dds` submodule:
+`git submodule update --init --recursive`. ddfast has its own Apache-2.0 license.
 
 ## License
 
